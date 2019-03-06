@@ -6,7 +6,7 @@ set -euo pipefail
 
 # docker/podman don't run through PAM, but we want this set for the privileged
 # (non-virtualized) path
-export USER=${USER:-$(id -nu)}
+export USER="${USER:-$(id -nu)}"
 
 # When trying to connect to libvirt we get "Failed to find user record
 # for uid" errors if there is no entry for our UID in /etc/passwd.
@@ -16,7 +16,7 @@ if ! whoami &> /dev/null; then
   # We need to make sure we set $HOME in the /etc/passwd file because
   # if we don't libvirt will try to use `/` and we will get permission
   # issues
-  export HOME="/var/tmp/${USER_NAME:-default}" && mkdir -p $HOME
+  export HOME="/var/tmp/${USER_NAME:-default}" && mkdir -p "$HOME"
   if [ -w /etc/passwd ]; then
       echo "${USER_NAME:-default}:x:$(id -u):0:${USER_NAME:-default} user:${HOME}:/sbin/nologin" >> /etc/passwd
   fi
@@ -26,7 +26,7 @@ fi
 # the later umount doesn't affect the host potentially
 if [ -e /sys/fs/selinux/status ]; then
     if [ -z "${coreos_assembler_unshared:-}" ]; then
-        exec sudo -- env coreos_assembler_unshared=1 unshare -m -- runuser -u ${USER} -- $0 "$@"
+        exec sudo -- env coreos_assembler_unshared=1 unshare -m -- runuser -u "${USER}" -- "$0" "$@"
     else
         # Work around https://github.com/containers/libpod/issues/1448
         sudo umount /sys/fs/selinux
@@ -34,32 +34,40 @@ if [ -e /sys/fs/selinux/status ]; then
 fi
 
 cmd=${1:-}
+# commands we'd expect to use in the local dev path
 build_commands="init fetch build run prune clean"
+# commands more likely to be used in a prod pipeline only
+advanced_build_commands="buildprep buildextend-ec2 buildextend-openstack buildextend-installer oscontainer"
+utility_commands="tag compress bump-timestamp"
 other_commands="shell"
-utility_commands="gf-oemid virt-install oscontainer"
 if [ -z "${cmd}" ]; then
-    echo usage: "coreos-assembler CMD ..."
+    echo Usage: "coreos-assembler CMD ..."
     echo "Build commands:"
     for bin in ${build_commands}; do
         echo "  ${bin}"
-    done
+    done # don't sort these ones, they're roughly in the order they're used
 
-    echo "Other commands:"
-    for bin in ${other_commands}; do
+    echo "Advanced build commands:"
+    for bin in ${advanced_build_commands}; do
         echo "  ${bin}"
-    done
+    done | sort
 
     echo "Utility commands:"
     for bin in ${utility_commands}; do
         echo "  ${bin}"
-    done
+    done | sort
+
+    echo "Other commands:"
+    for bin in ${other_commands}; do
+        echo "  ${bin}"
+    done | sort
     exit 1
 fi
 shift
 
 target=/usr/lib/coreos-assembler/cmd-${cmd}
 if test -x "${target}"; then
-    exec ${target} "$@"
+    exec "${target}" "$@"
 fi
 
 echo "Unknown command: ${cmd}" 1>&2

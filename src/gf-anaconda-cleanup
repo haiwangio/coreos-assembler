@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# This runs after virt-install to undo things leftover from Anaconda.
+set -euo pipefail
+
+dn=$(dirname "$0")
+# shellcheck source=src/cmdlib.sh
+. "${dn}"/cmdlib.sh
+# shellcheck source=src/libguestfish.sh
+. "${dn}"/libguestfish.sh
+
+src="$1"
+shift
+skip_partition_fixups=
+if [ "${1:-}" = "--skip-partition-fixups" ]; then
+   skip_partition_fixups=1
+   shift
+fi
+
+set -x
+if [ "${skip_partition_fixups}" != 1 ]; then
+    coreos_gf_run "${src}"
+    # We don't have a way to do this with Anaconda/kickstart right now.
+    # This bootstraps us to be able to do all of the mounts.
+    coreos_gf set-label /dev/sda2 boot
+fi
+coreos_gf_run_mount "${src}"
+
+# Both of these are written by Anaconda
+coreos_gf rm-rf "${deploydir}/etc/sysconfig/anaconda"
+coreos_gf rm-rf "${deploydir}/etc/systemd/system/default.target"
+# And blow away all of /var - we want systemd-tmpfiles to be
+# canonical
+coreos_gf rm-rf "${stateroot}/var/*"
+
+coreos_gf_shutdown

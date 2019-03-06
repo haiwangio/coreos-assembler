@@ -1,31 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-dn=$(dirname $0)
-. ${dn}/cmdlib.sh
+dn=$(dirname "$0")
+# shellcheck source=src/cmdlib.sh
+. "${dn}"/cmdlib.sh
 
-# Initialize FORCE to 0
+# Initialize FORCE to 0 and BRANCH/INSTALLER_DIR to an empty string
 FORCE=0
-SUBDIR=
+BRANCH=""
 
 print_help() {
     cat 1>&2 <<'EOF'
 Usage: coreos-assembler init --help
-       coreos-assembler init [--force] GITCONFIG [SUBDIR]
+       coreos-assembler init [--force] [--branch BRANCH] GITCONFIG [SUBDIR]
 
   For example, you can use https://github.com/coreos/fedora-coreos-config
   as GITCONFIG, or fork it.  Another option useful for local development
   (if you're running a shell inside this container) is to pass a file path
   starting with `/` - a symlink to it will be created and then used directly.
+  You can specify a branch of a git repo with the `--branch` flag.
 
   If specified, SUBDIR is a subdirectory of the git repository that should
-  contain manifest.yaml and image.ks.
+  contain manifest.yaml and image.yaml (or image.ks).
 EOF
 }
 
 # Call getopt to validate the provided input.
 rc=0
-options=$(getopt --options hf --longoptions help,force -- "$@") || rc=$?
+options=$(getopt --options hfb:i: --longoptions help,force,branch: -- "$@") || rc=$?
 [ $rc -eq 0 ] || {
     print_help
     exit 1
@@ -39,6 +41,15 @@ while true; do
         ;;
     -f | --force)
         FORCE=1
+        ;;
+    -b | --branch)
+        case "$2" in
+            "")
+                shift ;;
+            *)
+                BRANCH="$2"
+                shift ;;
+        esac
         ;;
     --)
         shift
@@ -62,7 +73,7 @@ fi
 
 # If the current working dir is not empty then error out
 # unless force provided
-if [ "$FORCE" != "1" -a ! -z "$(ls -A ./)" ]; then
+if [ "$FORCE" != "1" ] && [ -n "$(ls -A ./)" ]; then
    fatal "init: current directory is not empty, override with --force"
 fi
 
@@ -72,14 +83,12 @@ subdir=${1:-}
 preflight
 
 if has_privileges; then
-    sudo chown $USER: .
+    sudo chown "$USER:" .
 elif [ ! -w . ]; then
     fatal "init: running unprivileged, and current directory not writable"
 fi
 
-INSTALLER=https://download.fedoraproject.org/pub/fedora/linux/releases/28/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-28-1.1.iso
-INSTALLER_CHECKSUM=https://download.fedoraproject.org/pub/fedora/linux/releases/28/Everything/x86_64/iso/Fedora-Everything-28-1.1-x86_64-CHECKSUM
-
+set -x
 # Initialize sources (git)
 mkdir -p src
 (cd src
@@ -87,9 +96,15 @@ mkdir -p src
      case "${source}" in
          /*) ln -sr "${source}/${subdir}" config;;
          *) git clone "${source}" config
+            if [ -n "${BRANCH}" ]; then
+                # On EL7 git doesn't support -C option so use pushd/popd
+                pushd config >/dev/null
+                git checkout "${BRANCH}"
+                popd
+            fi
             if [ -n "${subdir}" ]; then
                 mv config config-git
-                ln -sr config-git/${subdir} config
+                ln -sr config-git/"${subdir}" config
             fi
             ;;
      esac
@@ -100,26 +115,7 @@ mkdir -p src
      fi
  fi)
 
-mkdir -p installer
-(cd installer
- installer_bn=$(basename ${INSTALLER})
- if ! [ -f "${installer_bn}" ]; then
-     mkdir -p tmp
-     cd tmp
-     curl -L --remote-name-all ${INSTALLER} ${INSTALLER_CHECKSUM}
-     checksums_bn=$(basename ${INSTALLER_CHECKSUM})
-     sha256sum -c ${checksums_bn}
-     mv ${installer_bn} ${checksums_bn} ..
-     cd ..
-     rm tmp -rf
- fi
-)
-
 mkdir -p cache
 mkdir -p builds
 mkdir -p tmp
 ostree --repo=repo init --mode=archive
-if ! has_privileges; then
-    qemu-img create -f qcow2 cache/cache.qcow2 10G
-    LIBGUESTFS_BACKEND=direct virt-format --filesystem=xfs -a cache/cache.qcow2
-fi

@@ -9,14 +9,17 @@ sudo
 dumb-init
 
 # For composes
-rpm-ostree
+rpm-ostree createrepo_c openssh-clients
+#FEDORA dnf-utils
+#EL7 yum-utils
 
-# rpmdistro-gitoverlay deps
-dnf-plugins-core createrepo_c dnf-utils fedpkg openssh-clients rpmdistro-gitoverlay
+# For generating ISO images
+genisoimage
+#FEDORA syslinux-nonlinux
+#EL7 syslinux
 
-# Currently a transitive req of rpmdistro-gitoverlay via mock, but we
-# expect people to use these explicitly in their repo configurations.
-distribution-gpg-keys
+# We expect people to use these explicitly in their repo configurations.
+#FEDORA distribution-gpg-keys
 # We need these for rojig
 selinux-policy-targeted rpm-build
 
@@ -24,12 +27,20 @@ selinux-policy-targeted rpm-build
 make git rpm-build
 
 # virt-install dependencies
-libvirt libguestfs-tools qemu-kvm /usr/bin/qemu-img /usr/bin/virsh /usr/bin/virt-install
+libvirt libguestfs-tools /usr/bin/qemu-img /usr/bin/virsh /usr/bin/virt-install
+#FEDORA qemu-kvm
+#EL7 qemu-kvm-rhev
+
 # And we process kickstarts
 /usr/bin/ksflatten
 
+# scl and python36 For EL7
+#EL7 scl-utils rh-python36 rh-python36-PyYAML
+
 # ostree-releng-scripts dependencies
-rsync python2-gobject-base python3-gobject-base
+rsync
+#FEDORA python2-gobject-base python3-gobject-base
+#EL7 python-gobject
 
 # To support recursive containerization and manipulating images
 podman buildah skopeo
@@ -40,5 +51,11 @@ jq awscli
 # For ignition file validation in cmd-run
 ignition
 
-# For parsing ISO8601 dates
-python3-dateutil
+# shellcheck for test
+#FEDORA ShellCheck
+
+# for grub install when creating images without anaconda
+grub2
+
+# For creating bootable UEFI media on x86_64
+shim-x64 grub2-efi-x64
